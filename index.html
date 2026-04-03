@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Física</title>
+</head>
+
+<body>
+  <canvas id="canvas" width="500" height="400"></canvas>
+</body>
+<script>
+  let canvas = document.getElementById("canvas");
+  let ctx = canvas.getContext("2d");
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  let camera = {
+    x: 0,
+    y: 0,
+    c: false,
+    b: false,
+    e: false,
+    d: false,
+    vel: 9
+  };
+
+  /////////////////////////////////
+  /* CLASSES*/
+  ///////////////////////////////////
+
+  class Corpo {
+    constructor(x, y, larg, alt, cor, massa, redondo) {
+
+      this.x = x;
+      this.y = y;
+      this.larg = larg;
+      this.alt = alt;
+      this.cor = cor;
+      this.redondo = redondo;
+      this.isBlackHole = false;
+
+      this.vx = 0;
+      this.vy = 0;
+      this.ax = 0;
+      this.ay = 0;
+
+      //controle
+      this.c = false;
+      this.b = false;
+      this.e = false;
+      this.d = false;
+
+      this.massa = massa;
+    }
+    update() {
+
+      this.vx += this.ax;
+      this.vy += this.ay;
+
+      this.x += this.vx;
+      this.y += this.vy;
+
+      // reset aceleração
+      this.ax = 0;
+      this.ay = 0;
+      this.vx *= 0.995;
+      this.vy *= 0.995;
+    }
+    draw(ctx) {
+      if (this.cor == "black") {
+
+        let r = this.larg / 2;
+
+        // gradiente radial
+        let grad = ctx.createRadialGradient(
+          this.x, this.y, r * 0.05,
+          this.x, this.y, r
+        );
+
+        grad.addColorStop(0, "black");
+        grad.addColorStop(0.3, "blue");
+        grad.addColorStop(0.7, "purple");
+        grad.addColorStop(0.8, "red");
+        //grad.addColorStop(0.9, "orange");
+        
+        
+        grad.addColorStop(1, "rgba(50,0,50)");
+
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        // núcleo (mais escuro)
+        ctx.beginPath();
+        ctx.fillStyle = "black";
+        ctx.arc(this.x, this.y, r * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        return;
+      }
+
+      // resto normal
+      ctx.fillStyle = this.cor;
+      if (!this.redondo)
+        ctx.fillRect(this.x, this.y, this.larg, this.alt);
+      else {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.larg / 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  /////////////////////////////////
+  /* CLASSES ESTÁTICAS*/
+  ///////////////////////////////////
+  class Fisica {
+    static frames = 0;
+    static G = 0.1;
+    static gravidade(corpos) {
+      for (let i = 0; i < corpos.length; i++) {
+        for (let j = i + 1; j < corpos.length; j++) {
+
+          let dx = corpos[j].x - corpos[i].x;
+          let dy = corpos[j].y - corpos[i].y;
+
+          let dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 5) continue;
+          let F = this.G * (corpos[i].massa * corpos[j].massa) / (dist * dist);
+          let Fx = F * (dx / dist);
+          let Fy = F * (dy / dist);
+
+          corpos[i].ax += Fx / corpos[i].massa;
+          corpos[i].ay += Fy / corpos[i].massa;
+
+          corpos[j].ax -= Fx / corpos[j].massa;
+          corpos[j].ay -= Fy / corpos[j].massa;
+        }
+      }
+    }
+    static colisoesCirculoRetangulo(corpos) {
+      for (let i = 0; i < corpos.length; i++) {
+        for (let j = i + 1; j < corpos.length; j++) {
+
+          let A = corpos[i];
+          let B = corpos[j];
+
+          // queremos UM círculo e UM retângulo
+          if (A.redondo === B.redondo) continue;
+
+          let circ = A.redondo ? A : B;
+          let rect = A.redondo ? B : A;
+
+          let cx = circ.x;
+          let cy = circ.y;
+          let r = circ.larg / 2;
+
+          // ponto mais próximo do retângulo
+          let closestX = Math.max(rect.x, Math.min(cx, rect.x + rect.larg));
+          let closestY = Math.max(rect.y, Math.min(cy, rect.y + rect.alt));
+
+          let dx = cx - closestX;
+          let dy = cy - closestY;
+
+          let dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < r) {
+
+            // -------------------------
+            // CORREÇÃO DE POSIÇÃO
+            // -------------------------
+            let overlap = r - dist;
+            overlap = Math.min(overlap, 5);
+
+            let nx, ny;
+
+            // centro do retângulo
+            let rcx = rect.x + rect.larg / 2;
+            let rcy = rect.y + rect.alt / 2;
+
+            // vetor do centro do retângulo até o círculo
+            let diffX = cx - rcx;
+            let diffY = cy - rcy;
+
+            // metade dos tamanhos
+            let halfW = rect.larg / 2;
+            let halfH = rect.alt / 2;
+
+            // calcula penetração em cada eixo
+            let penX = halfW - Math.abs(diffX);
+            let penY = halfH - Math.abs(diffY);
+
+            if (penX < penY) {
+              nx = diffX > 0 ? 1 : -1;
+              ny = 0;
+              overlap = r + penX;
+            } else {
+              nx = 0;
+              ny = diffY > 0 ? 1 : -1;
+              overlap = r + penY;
+            }
+
+            let totalMass = circ.massa + rect.massa;
+
+            circ.x += nx * overlap * (rect.massa / totalMass);
+            circ.y += ny * overlap * (rect.massa / totalMass);
+
+            rect.x -= nx * overlap * (circ.massa / totalMass);
+            rect.y -= ny * overlap * (circ.massa / totalMass);
+
+            // -------------------------
+            // RESPOSTA DE VELOCIDADE
+            // ------------------------
+
+            let dvx = rect.vx - circ.vx;
+            let dvy = rect.vy - circ.vy;
+
+            let vn = dvx * nx + dvy * ny;
+
+            if (vn > -0.5) continue;
+
+            let e = Math.abs(vn) < 1 ? 0 : 0.3;
+
+            // impulso com massa
+            let impulso = -(1 + e) * vn;
+            impulso /= (1 / circ.massa + 1 / rect.massa);
+
+            let ix = impulso * nx;
+            let iy = impulso * ny;
+
+            // aplica nos dois
+            circ.vx -= ix / circ.massa;
+            circ.vy -= iy / circ.massa;
+
+            rect.vx += ix / rect.massa;
+            rect.vy += iy / rect.massa;
+
+            // remove velocidade residual na normal
+            if (Math.abs(vn) < 0.5) {
+              let remove = vn;
+
+              circ.vx += remove * nx;
+              circ.vy += remove * ny;
+
+              rect.vx -= remove * nx;
+              rect.vy -= remove * ny;
+            }
+          }
+        }
+      }
+    }
+    static colisoesRetangulos(corpos) {
+      for (let i = 0; i < corpos.length; i++) {
+        for (let j = i + 1; j < corpos.length; j++) {
+
+          let A = corpos[i];
+          let B = corpos[j];
+
+          if (A.redondo || B.redondo) continue;
+
+          // colisão AABB
+          if (
+            A.x < B.x + B.larg &&
+            A.x + A.larg > B.x &&
+            A.y < B.y + B.alt &&
+            A.y + A.alt > B.y
+          ) {
+
+            // centros
+            let ax = A.x + A.larg / 2;
+            let ay = A.y + A.alt / 2;
+
+            let bx = B.x + B.larg / 2;
+            let by = B.y + B.alt / 2;
+
+            let dx = ax - bx;
+            let dy = ay - by;
+
+            let overlapX = (A.larg / 2 + B.larg / 2) - Math.abs(dx);
+            let overlapY = (A.alt / 2 + B.alt / 2) - Math.abs(dy);
+
+            // coeficiente de restituição (MENOR = menos quique)
+            let e = 0.3;
+
+            if (overlapX < overlapY) {
+              // colisão horizontal
+
+              if (dx > 0) {
+                A.x += overlapX / 2;
+                B.x -= overlapX / 2;
+              } else {
+                A.x -= overlapX / 2;
+                B.x += overlapX / 2;
+              }
+
+              // troca velocidade no eixo X
+              let vxA = A.vx;
+              let vxB = B.vx;
+
+              A.vx = ((A.massa - e * B.massa) * vxA + (1 + e) * B.massa * vxB) / (A.massa + B.massa);
+              B.vx = ((B.massa - e * A.massa) * vxB + (1 + e) * A.massa * vxA) / (A.massa + B.massa);
+
+            } else {
+              // colisão vertical
+
+              if (dy > 0) {
+                A.y += overlapY / 2;
+                B.y -= overlapY / 2;
+              } else {
+                A.y -= overlapY / 2;
+                B.y += overlapY / 2;
+              }
+
+              let vyA = A.vy;
+              let vyB = B.vy;
+
+              A.vy = ((A.massa - e * B.massa) * vyA + (1 + e) * B.massa * vyB) / (A.massa + B.massa);
+              B.vy = ((B.massa - e * A.massa) * vyB + (1 + e) * A.massa * vyA) / (A.massa + B.massa);
+            }
+          }
+        }
+      }
+    }
+
+    static colisoes(corpos) {
+      for (let i = 0; i < corpos.length; i++) {
+        for (let j = i + 1; j < corpos.length; j++) {
+
+          let A = corpos[i];
+          let B = corpos[j];
+
+          if (!A.redondo || !B.redondo) continue;
+
+          let dx = B.x - A.x;
+          let dy = B.y - A.y;
+          let dist = Math.sqrt(dx * dx + dy * dy);
+
+          let rA = A.larg / 2;
+          let rB = B.larg / 2;
+
+          // colisão
+          if (dist < rA + rB) {
+
+            // -------------------------
+            // 1. CORREÇÃO DE POSIÇÃO
+            // -------------------------
+            let overlap = (rA + rB) - dist;
+
+            let nx = dx / dist;
+            let ny = dy / dist;
+
+            // empurra cada um metade
+            A.x -= nx * overlap / 2;
+            A.y -= ny * overlap / 2;
+
+            B.x += nx * overlap / 2;
+            B.y += ny * overlap / 2;
+
+            // -------------------------
+            // 2. RESPOSTA DE VELOCIDADE
+            // -------------------------
+
+            // velocidade relativa
+            let dvx = B.vx - A.vx;
+            let dvy = B.vy - A.vy;
+
+            // projeção na normal
+            let vn = dvx * nx + dvy * ny;
+
+            // se já estão se afastando, ignora
+            if (vn > 0) continue;
+
+            // colisão elástica (e = 1)
+            let e = 0.5;
+
+            let impulso = -(1 + e) * vn;
+            impulso /= (1 / A.massa + 1 / B.massa);
+
+            let ix = impulso * nx;
+            let iy = impulso * ny;
+
+            A.vx -= ix / A.massa;
+            A.vy -= iy / A.massa;
+
+            B.vx += ix / B.massa;
+            B.vy += iy / B.massa;
+          }
+        }
+      }
+    }
+  }
+  ///////////////////////////////////////////////////////////////////////////////
+  let corpos = [];
+  for (let i = 0; i < 800; i++) {
+    corpos.push(new Corpo(-300 + Math.random() * canvas.width * 2, -300 + Math.random() * canvas.height * 2, Math.random() * 15, Math.random() * 30+10, "orange", 10, true));
+    if (Math.random() * 2 < 1) {
+      corpos[i].vx = Math.random() * -10;
+      corpos[i].vy = Math.random() * -10;
+    }
+    else {
+      corpos[i].vx = Math.random() * 10;
+      corpos[i].vy = Math.random() * 10;
+    }
+
+  }
+
+
+  //corpos.push(new Corpo(400, 300, 80, 100, "black", 100000, true));
+  // corpos.push(new Corpo(800, 300, 80, 100, "black", 100000, true));
+
+
+
+  function loop() {
+    requestAnimationFrame(loop);
+    update();
+    draw(ctx);
+    Fisica.frames++;
+  }
+  function update() {
+    Fisica.gravidade(corpos);
+
+    for (let c of corpos) {
+      c.update();
+    }
+    for (let k = 0; k < 3; k++) {
+      Fisica.colisoes(corpos);
+      Fisica.colisoesRetangulos(corpos);
+      Fisica.colisoesCirculoRetangulo(corpos);
+    }
+    if (camera.e) camera.x -= camera.vel;
+    if (camera.d) camera.x += camera.vel;
+    if (camera.c) camera.y -= camera.vel;
+    if (camera.b) camera.y += camera.vel;
+  }
+  function draw(ctx) {
+
+    ctx.save();
+    ctx.clearRect(camera, camera.y, canvas.width, canvas.height);
+    ctx.translate(-camera.x, -camera.y);
+    ctx.fillStyle = "black";
+    ctx.fillRect(camera.x, camera.y, canvas.width, canvas.height);
+    for (let c of corpos) {
+      c.draw(ctx);
+    }
+    ctx.restore();
+
+  }
+  loop(ctx);
+
+
+
+
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "a") camera.e = true;
+    if (e.key === "d") camera.d = true;
+    if (e.key === "w") camera.c = true;
+    if (e.key === "s") camera.b = true;
+
+    if (e.key === "g") {
+      let indexAlvo = corpos.length-1;
+      let alvo = corpos[indexAlvo];
+      camera.x = alvo.x - canvas.width / 2;
+      camera.y = alvo.y - canvas.height / 2;
+    }
+  });
+  window.addEventListener("keyup", (e) => {
+    if (e.key === "a") camera.e = false;
+    if (e.key === "d") camera.d = false;
+    if (e.key === "w") camera.c = false;
+    if (e.key === "s") camera.b = false;
+  });
+</script>
+
+</html>

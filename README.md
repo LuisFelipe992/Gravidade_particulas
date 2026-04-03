@@ -2,6 +2,8 @@
 
 
 Simulador físico 2D desenvolvido em JavaScript utilizando HTML5 Canvas. O projeto implementa interação gravitacional entre múltiplos corpos, colisões realistas e um sistema de câmera para navegação no espaço simulado.
+
+
 acesse em <a href =' https://luisfelipe992.github.io/Gravidade_particulas/'>Página de Visualização</a>
 
 ---
